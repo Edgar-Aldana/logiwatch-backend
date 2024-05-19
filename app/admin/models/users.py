@@ -2,27 +2,31 @@ from sqlalchemy import Column, String, Integer, Date, DateTime, exc
 from datetime import datetime
 from ...database_connection import session, Base
 
-class Monitoristas(Base):
+
+class Empleados(Base):
     
-    __tablename__ = "Monitoristas"
+    __tablename__ = "Empleados"
     __table_args__ = {"schema": "AUTH"}
 
     correo = Column(String(255), primary_key=True)
     password = Column(String(255))
-    idEmpleado = Column(Integer)
+    numeroEmpleado = Column(String(10), default=None)
 
     nombres = Column(String(255))
     apellidoPaterno = Column(String(255))
     apellidoMaterno = Column(String(255))
-
     telefono = Column(String(20))
+
+    posicion = Column(String(255))
     region = Column(String(100))
+    matriculaVehiculo = Column(String(20), default=None)
+
     fechaRegistro = Column(DateTime, default=datetime.now())
 
 
     def find(**kwargs):
         try:
-            return session.query(Monitoristas).filter_by(**kwargs).all()
+            return session.query(Empleados).filter_by(**kwargs).all()
         except exc.SQLAlchemyError as err:
             print(err)
             return {}
@@ -32,7 +36,7 @@ class Monitoristas(Base):
 
     def create(**request):
         try:       
-            user = Monitoristas(**request)
+            user = Empleados(**request)
             session.add(user)
             session.commit()
             return user
@@ -46,7 +50,7 @@ class Monitoristas(Base):
         try:  
     
             updated = (
-                session.query(Monitoristas)
+                session.query(Empleados)
                 .filter_by(correo=str(update["correo"]))
                 .update(update, synchronize_session="fetch")
             )
@@ -61,7 +65,7 @@ class Monitoristas(Base):
     def delete(**kwargs) -> int:
         try:        
             updated = (
-                session.query(Monitoristas)
+                session.query(Empleados)
                 .filter_by(**kwargs)
                 .update(
                     {"active": False, "deleteAt": datetime.now()},
@@ -74,27 +78,3 @@ class Monitoristas(Base):
             print(err)
             session.rollback()
             return {}
-        
-
-
-        
-
-class Conductores(Base):
-    
-    __tablename__ = "Conductores"
-    __table_args__ = {"schema": "AUTH"}
-
-    
-    idConductor = Column(Integer, primary_key=True)
-
-    nombres = Column(String(255))
-    apellidoPaterno = Column(String(255))
-    apellidoMaterno = Column(String(255))
-
-    telefono = Column(String(20))
-    matricula = Column(String(20))
-    region = Column(String(100))
-    fechaRegistro = Column(DateTime, default=datetime.now())
-
-
-

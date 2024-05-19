@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from app.admin.schemas.output.generalOutputSchemas import Response
 
 
 class accessTokenData(BaseModel):
@@ -7,8 +8,20 @@ class accessTokenData(BaseModel):
     type: str
 
 
-class accessTokenResponse(BaseModel):
+class accessTokenResponse(Response):
 
-    success: bool
-    detail: str
     payload: accessTokenData | None
+
+
+
+class signupData(BaseModel):
+
+    user: str | None
+
+
+
+class signupResponse(Response):
+
+    payload: signupData
+
+

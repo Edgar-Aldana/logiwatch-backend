@@ -1,7 +1,7 @@
 from app.admin.schemas.output.loginOutputSchemas import accessTokenData, accessTokenResponse
 from app.utils.decode import token
-from ..schemas.input.loginInputSchemas import LoginRequest
-from app.admin.models.users import Monitoristas
+from ..schemas.input.loginInputSchemas import LoginRequest, SignupRequest
+from app.admin.models.users import Empleados
 
 
 
@@ -23,7 +23,7 @@ class AuthService():
     
     def ValidateRegisteredUser(request: LoginRequest):
 
-        user = Monitoristas.find(correo=request.email_address, password=request.password)
+        user = Empleados.find(correo=request.email_address, password=request.password)
         accessToken = AuthService.GetAccessToken(user)
         tokenData: accessTokenData = accessTokenData(access_token=accessToken, type="Bearer")
 
@@ -34,5 +34,11 @@ class AuthService():
 
         return accessTokenPayload
 
-        
-    
+
+    def createUser(userData: SignupRequest):
+
+        userExists = Empleados.find(correo=userData.correo)
+        if not len(userExists):
+            return Empleados.create(**userData.dict())
+        else:
+            return None
