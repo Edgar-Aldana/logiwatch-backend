@@ -1,9 +1,15 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from app.admin.routers import login
 from fastapi.middleware.cors import CORSMiddleware
+
+#Models and Engines
 import app.admin.models as AdminModels
 from app.database_connection import engine
+
+
+#Routers
+from app.admin.routers import login
+from app.api.routers import facialRecognition
 
 app = FastAPI()
 
@@ -30,7 +36,7 @@ app.add_middleware(
 
 #Routers
 app.include_router(login.auth_router)
-
+app.include_router(facialRecognition.facial_recognition_router)
 
 
 
