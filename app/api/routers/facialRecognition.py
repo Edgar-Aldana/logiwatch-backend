@@ -1,76 +1,114 @@
-from fastapi import APIRouter, WebSocket
 import cv2
-import numpy as np
+import mediapipe as mp
+import base64
+import json
 import asyncio
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from typing import List
+from mediapipe.python.solutions.drawing_utils import DrawingSpec
 
+# Inicializar enrutador de API
 facial_recognition_router = APIRouter(prefix="/facialRecognition")
 
-
-def detect_color_eyes(frame):
-
-    # Convierte la imagen a escala de grises
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-    # Usa el clasificador de rostros de OpenCV
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye_tree_eyeglasses.xml')
-    
-    faces = face_cascade.detectMultiScale(gray, 1.1, 4)
-    
-    for (x, y, w, h) in faces:
-        cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
-        roi_gray = gray[y:y + h, x:x + w]
-        roi_color = frame[y:y + h, x:x + w]
-        
-        eyes = eye_cascade.detectMultiScale(roi_gray)
-        for (ex, ey, ew, eh) in eyes:
-            eye = roi_color[ey:ey + eh, ex:ex + ew]
-            eye_hsv = cv2.cvtColor(eye, cv2.COLOR_BGR2HSV)
-            mask = cv2.inRange(eye_hsv, np.array([0, 50, 50]), np.array([10, 255, 255]))
-            color_eye_detected = cv2.countNonZero(mask) > 0
-            if color_eye_detected:
-                cv2.rectangle(roi_color, (ex, ey), (ex + ew, ey + eh), (0, 0, 255), 2)
-    
-    return frame
-
-
-
+# Clase para manejar conexiones WebSocket
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: list[WebSocket] = []
+        self.active_connections: List[WebSocket] = []
+        self.capture_started = False
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        if not self.capture_started:
+            asyncio.create_task(self.video_capture())
+            self.capture_started = True
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        try:
+            self.active_connections.remove(websocket)
+        except:
+            pass
+        if not self.active_connections:
+            self.capture_started = False
 
-    async def broadcast(self, message: bytes):
+    async def broadcast(self, message):
         for connection in self.active_connections:
-            await connection.send_bytes(message)
+            try:
+                await connection.send_bytes(message) 
+            except WebSocketDisconnect:
+                self.disconnect(connection)
+            except Exception as e:
+                print(f"Error broadcasting: {e}")
+
+    async def video_capture(self):
+        cap = cv2.VideoCapture(0)
+        frame_rate = 20  # Tasa de frames por segundo
+        frame_interval = 1.0 / frame_rate  # Intervalo entre frames
+        
+        # Inicializar MediaPipe Face Detection
+        mp_face_detection = mp.solutions.face_detection
+        mp_drawing = mp.solutions.drawing_utils
+        face_detection = mp_face_detection.FaceDetection(
+            model_selection=1, min_detection_confidence=0.5)
+        
+
+        try:
+            while self.active_connections:
+                start_time = asyncio.get_event_loop().time()
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                frame = cv2.flip(frame, 1)  # Voltear horizontalmente
+                
+                # Convertir el frame a RGB
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+                # Procesar el frame con MediaPipe Face Detection
+                results = face_detection.process(frame_rgb)
+
+                # Dibujar las detecciones de rostros en el frame
+                if results.detections:
+            
+                    for detection in results.detections:
+                        mp_drawing.draw_detection(frame, detection, DrawingSpec(color=(0,255,0)))
+                        nose_tip = mp_face_detection.get_key_point(
+                            detection, mp_face_detection.FaceKeyPoint.NOSE_TIP)
+                        if nose_tip.y > 0.5:  # Se inclina hacia abajo
+                            mp_drawing.draw_detection(frame, detection, DrawingSpec(color=(0,255,255)))
+                            message = {"type": "alert", "data": {"alert": "SOMNOLIENTO"}}
+                            json_message = json.dumps(message)
+                            asyncio.create_task(self.broadcast(json_message))
+
+                # Codificar el frame como JPEG con calidad óptima
+                #encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
+                _, buffer = cv2.imencode('.jpg', frame)
+
+                # Enviar los datos binarios del frame a través de la conexión WebSocket
+                encoded_data = base64.b64encode(buffer.tobytes()).decode('utf-8')
+                message = {"type": "frame", "data": encoded_data}
+                json_message = json.dumps(message)
+                await self.broadcast(json_message)
+                
+                # Controlar la tasa de frames
+                elapsed_time = asyncio.get_event_loop().time() - start_time
+                await asyncio.sleep(max(0, frame_interval - elapsed_time))
+        finally:
+            cap.release()
+            face_detection.close()
 
 manager = ConnectionManager()
 
-
-
+# Endpoint WebSocket para transmitir la captura de video
 @facial_recognition_router.websocket("/websocket")
 async def websocket_endpoint(websocket: WebSocket):
-
-    await websocket.accept()
-    cap = cv2.VideoCapture(0)
-    
+    await manager.connect(websocket)
     try:
         while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            frame = detect_color_eyes(frame)
-            _, buffer = cv2.imencode('.jpg', frame)
-            await websocket.send_bytes(buffer.tobytes())
-            await asyncio.sleep(0.03)
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
     except Exception as e:
-        print(f"Connection closed: {e}")
-    finally:
-        cap.release()
+        print(f"Connection error: {e}")
+
+
