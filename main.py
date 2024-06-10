@@ -10,6 +10,7 @@ from app.database_connection import engine
 #Routers
 from app.admin.routers import login
 from app.api.routers import facialRecognition
+from app.api.routers import audioReceive
 
 app = FastAPI()
 
@@ -37,6 +38,7 @@ app.add_middleware(
 #Routers
 app.include_router(login.auth_router)
 app.include_router(facialRecognition.facial_recognition_router)
+app.include_router(audioReceive.audio_receive_router)
 
 
 
